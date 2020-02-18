@@ -170,6 +170,7 @@ def prepare_mesh(VERT,TRIV,dtype='float32'):
             idx=idx+1;
 #     print(idx)
 
+    # Set Ael for existing edgeIdx with vertex i to 1
     Ael = np.zeros(shape=(n,m),dtype=dtype);
     for i in range(n):
         Ael[i,map_[i,np.nonzero(map_[i,:]+1)]]=1

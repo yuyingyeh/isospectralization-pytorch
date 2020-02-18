@@ -47,23 +47,23 @@ def tf_calc_lap(mesh,VERT):
     #L2 = tf.expand_dims(tf.reduce_sum(tf.matmul(iM,VERT)**2,axis=1),axis=1)
     L2 = torch.unsqueeze(torch.sum(torch.mm(iM,VERT)**2,dim=1),dim=1)
     #L=tf.sqrt(L2);
-    L=torch.sqrt(L2);
+    L=torch.sqrt(L2); # Dist of edges (m, 1)
 
-    def  fAk(Ik,Ik_k):
+    def  fAk(Ik,Ik_k): # Ik: 1 if (edg1, edg2) in same tri, -1 if same edge
         Ikp=np.abs(Ik);
         #Sk = tf.matmul(Ikp,L)/2
-        Sk = torch.mm(Ikp,L)/2
+        Sk = torch.mm(Ikp,L)/2 # Perimeter of associated tri for each edge (m, )
         SkL = Sk-L;
         Ak = Sk*(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,0],L))\
                        *(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,1],L))\
                        *(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,2],L))
         return torch.sqrt(torch.abs(Ak)+1e-20)
 
-    Ak = fAk(Ik,Ik_k)
-    Ah = fAk(Ih,Ih_k)
+    Ak = fAk(Ik,Ik_k) # (m, )
+    Ah = fAk(Ih,Ih_k) # (m, )
 
     #sparse representation of the Laplacian matrix
-    W = -torch.mm(Ik,L2)/(8*Ak)-torch.mm(Ih,L2)/(8*Ah);
+    W = -torch.mm(Ik,L2)/(8*Ak)-torch.mm(Ih,L2)/(8*Ah); # (m, )
 
 
     #compute indices to build the dense Laplacian matrix
@@ -78,15 +78,16 @@ def tf_calc_lap(mesh,VERT):
 
     #actual Laplacian
     #Lx = Wfull-tf.diag(tf.reduce_sum(Wfull,axis=1))
-    Lx = Wfull-torch.diag(torch.sum(Wfull,dim=1))
-    S = (torch.mm(Ael,Ak)+torch.mm(Ael,Ah))/6;
+    Lx = Wfull-torch.diag(torch.sum(Wfull,dim=1)) # (n, n)
+    S = (torch.mm(Ael,Ak)+torch.mm(Ael,Ah))/6; # (n, )
 
     return Lx,S,L,Ak;
 
 
 def calc_evals(VERT,TRIV):
     mesh = prepare_mesh(VERT,TRIV)
-    Lx,S,L,Ak = tf_calc_lap(mesh,mesh[0])
+    #Lx,S,L,Ak = tf_calc_lap(mesh,mesh[0])
+    Lx,S,_,_ = tf_calc_lap(mesh,mesh[0])
     Si = torch.diag(torch.sqrt(1/S[:,0]))
     Lap =  torch.mm(Si,torch.mm(Lx,Si));
     #[evals,evecs]  = tf.self_adjoint_eig( Lap )
