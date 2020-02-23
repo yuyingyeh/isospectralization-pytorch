@@ -2,7 +2,7 @@ from scipy import sparse
 #import matplotlib.pyplot as plt
 import os
 
-import tensorflow as tf
+#import tensorflow as tf
 import numpy as np
 import scipy
 
@@ -54,7 +54,8 @@ def tic():
     # Records a time in TicToc, marks the beginning of a time interval
     toc(False)
 
-def pteval(X):
+#def pteval(X):
+
 
 def tfeval(X):
     gpu_options = tf.GPUOptions(allow_growth = True)
