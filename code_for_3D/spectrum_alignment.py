@@ -36,7 +36,8 @@ class OptimizationParams:
             self.curvature_reg = 1e5
             self.smoothness_reg = 5e4
 
-        self.volume_reg = 1e1
+        # self.volume_reg = 1e1
+        self.volume_reg = 1e3
         self.l2_reg = 2e6
 
         self.min_eval_loss = 0.05
@@ -331,15 +332,15 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                         print('Iter %f, cost: %f(e %f, l %f, w %f - vol: %f + l2reg: %f)' % (int(step), er, erE,  ervcL, errcW, vol, l2reg))
 
                         if step % params.checkpoint_steps == 0 or step == params.numsteps - 1:
-                            save_ply(Xopt, TRIV, '%s/ply/evals_%d_iter%d.ply' % (out_path, nevals, step))
+                            save_ply(Xopt, TRIV, '%s/ply/evals_%d_iter_%06d.ply' % (out_path, nevals, step))
 
-                        np.savetxt('%s/txt/evals_%d_iter%d.txt' % (out_path, nevals, step), evout)
+                        np.savetxt('%s/txt/evals_%d_iter_%06d.txt' % (out_path, nevals, step), evout)
                         np.savetxt('%s/iterations.txt' % (out_path), iterations)
 
                         # Early stop
                         if erE < params.min_eval_loss:
                             step = params.numsteps
-                            print('Minimum eighenvalues loss reached')
+                            print('Minimum eigenvalues loss reached')
                             break
 
                 except KeyboardInterrupt:

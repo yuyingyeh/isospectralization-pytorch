@@ -292,14 +292,14 @@ def run_optimization(mesh, target_evals, out_path, params = OptimizationParams()
                             plt.axis('equal')
                             plt.show()
 
-                        save_ply(Xopt,TRIV,'%s/ply/evals_%d_iter%d.ply' % (out_path,nevals,step))
-                        np.savetxt('%s/txt/evals_%d_iter%d.txt' % (out_path,nevals,step),evout)
+                        save_ply(Xopt,TRIV,'%s/ply/evals_%d_iter_%06d.ply' % (out_path,nevals,step))
+                        np.savetxt('%s/txt/evals_%d_iter_%06d.txt' % (out_path,nevals,step),evout)
 
                         np.savetxt('%s/iterations.txt' % (out_path),iterations)
                         #early stop
                         if(ee<params.min_eval_loss):
                             step=params.numsteps
-                            print('Minimum eighenvalues loss reached')
+                            print('Minimum eigenvalues loss reached')
                             break
 
                 except KeyboardInterrupt:

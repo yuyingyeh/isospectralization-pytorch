@@ -5,6 +5,7 @@ import os.path
 
 import numpy as np
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from plyfile import PlyData
 
 # Configure Matplotlib
@@ -35,10 +36,8 @@ def load_ply(filename):
 def main():
     """Main function."""
     src, dst, target = parse_args()
-    src = os.path.normpath(src)
 
     if dst is not None:
-        dst = os.path.normpath(dst)
         os.makedirs(dst, exist_ok=True)
     else:
         os.makedirs(os.path.join(os.path.dirname(src), "png"), exist_ok=True)
@@ -53,12 +52,17 @@ def main():
             continue
 
         v, t = load_ply(os.path.join(src, filename))
-        plt.figure(figsize=(6, 6))
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111, projection="3d")
+        ax.view_init(30, 30)
         if target is not None:
-            plt.triplot(target_v[:, 0], target_v[:, 1], target_t - 1)
-        plt.triplot(v[:, 0], v[:, 1], t)
-        plt.xlim(0, 2)
-        plt.ylim(0, 2)
+            ax.plot_trisurf(target_v[:, 0], target_v[:, 1], target_t - 1)
+        ax.plot_trisurf(
+            v[:, 0], v[:, 1], t, v[:, 2], linewidth=0.2, edgecolor="0.8", alpha=0.5
+        )
+        plt.xlim(-0.2, 0.2)
+        plt.ylim(-0.2, 0.2)
+        ax.set_zlim(-0.2, 0.2)
         plt.axis("off")
         if dst is not None:
             filepath = os.path.join(dst, os.path.splitext(filename)[0])
