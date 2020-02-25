@@ -36,8 +36,10 @@ def load_ply(filename):
 def main():
     """Main function."""
     src, dst, target = parse_args()
+    src = os.path.normpath(src)
 
     if dst is not None:
+        dst = os.path.normpath(dst)
         os.makedirs(dst, exist_ok=True)
     else:
         os.makedirs(os.path.join(os.path.dirname(src), "png"), exist_ok=True)
