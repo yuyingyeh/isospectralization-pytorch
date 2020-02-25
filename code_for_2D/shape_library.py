@@ -10,7 +10,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 from plyfile import PlyData, PlyElement
 
-from IPython.display import clear_output
+# from IPython.display import clear_output
 import os
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon

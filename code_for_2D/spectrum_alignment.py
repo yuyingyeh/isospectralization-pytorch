@@ -14,9 +14,11 @@ import torch.nn.functional as F
 import numpy as np
 import scipy
 from shape_library import *
-from IPython.display import clear_output
+# from IPython.display import clear_output
 
 import matplotlib.pyplot as plt
+
+DEVICE = torch.device('cuda:3')
 
 class OptimizationParams:
     def __init__(self, smoothing='displacement'):
@@ -39,7 +41,7 @@ class OptimizationParams:
 def tf_calc_lap(mesh,VERT):
     meshTensor = []
     for i in range(len(mesh)):
-        meshTensor.append(torch.as_tensor(mesh[i]).cuda())
+        meshTensor.append(torch.as_tensor(mesh[i]).to(DEVICE))
     [_,TRIV,n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary, bound_edges, ord_list] = meshTensor
     dtype='float32'
     if(VERT.dtype=='float64'):
@@ -48,16 +50,16 @@ def tf_calc_lap(mesh,VERT):
         dtype='float16'
 
     #L2 = tf.expand_dims(tf.reduce_sum(tf.matmul(iM,VERT)**2,axis=1),axis=1)
-    VERT = torch.as_tensor(VERT).cuda()
+    VERT = torch.as_tensor(VERT).to(DEVICE)
     L2 = torch.unsqueeze(torch.sum(torch.mm(iM,VERT)**2,dim=1),dim=1)
-    #L=tf.sqrt(L2);
-    L=torch.sqrt(L2); # Dist of edges (m, 1)
+    #L=tf.sqrt(L2)
+    L=torch.sqrt(L2) # Dist of edges (m, 1)
 
     def  fAk(Ik,Ik_k): # Ik: 1 if (edg1, edg2) in same tri, -1 if same edge
-        Ikp=torch.abs(Ik);
+        Ikp=torch.abs(Ik)
         #Sk = tf.matmul(Ikp,L)/2
         Sk = torch.mm(Ikp,L)/2 # Perimeter of associated tri for each edge (m, )
-        SkL = Sk-L;
+        SkL = Sk-L
         Ak = Sk*(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,0],L))\
                        *(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,1],L))\
                        *(torch.mm(Ik_k[:,:,0],Sk)-torch.mm(Ik_k[:,:,2],L))
@@ -67,22 +69,26 @@ def tf_calc_lap(mesh,VERT):
     Ah = fAk(Ih,Ih_k) # (m, )
 
     #sparse representation of the Laplacian matrix
-    W = -torch.mm(Ik,L2)/(8*Ak)-torch.mm(Ih,L2)/(8*Ah); # (m, )
+    W = -torch.mm(Ik,L2)/(8*Ak)-torch.mm(Ih,L2)/(8*Ah) # (m, )
 
 
     #compute indices to build the dense Laplacian matrix
     #Windtf = tf.SparseTensor(indices=Windices, values=-np.ones((m),dtype), dense_shape=[n*n, m])
     if dtype == 'float32':
-        Windtf = torch.sparse.FloatTensor(torch.cuda.LongTensor(Windices.type(torch.long)).t(), \
-                                      torch.cuda.FloatTensor(-np.ones((m),dtype)), \
-                                      torch.Size([n*n, m]))
+        # Windtf = torch.sparse.FloatTensor(torch.cuda.LongTensor(Windices.type(torch.long)).t(), \
+        #                               torch.cuda.FloatTensor(-np.ones((m),dtype)), \
+        #                               torch.Size([n*n, m]))
+        Windtf = torch.sparse.FloatTensor(
+            torch.tensor(Windices.type(torch.long), dtype=torch.long, device=DEVICE).t(), #
+            torch.tensor(-np.ones((m), dtype), dtype=torch.float, device=DEVICE),
+            torch.Size([n*n, m]))
     if dtype == 'float64':
-        Windtf = torch.sparse.DoubleTensor(torch.cuda.LongTensor(Windices.type(torch.long)).t(), \
-                                      torch.cuda.DoubleTensor(-np.ones((m),dtype)), \
+        Windtf = torch.sparse.DoubleTensor(torch.cuda.LongTensor(Windices.type(torch.long), device=DEVICE).t(), \
+                                      torch.cuda.DoubleTensor(-np.ones((m), dtype), device=DEVICE), \
                                       torch.Size([n*n, m]))
     if dtype == 'float16':
-        Windtf = torch.sparse.HalfTensor(torch.cuda.LongTensor(Windices.type(torch.long)).t(), \
-                                      torch.cuda.HalfTensor(-np.ones((m),dtype)), \
+        Windtf = torch.sparse.HalfTensor(torch.cuda.LongTensor(Windices.type(torch.long), device=DEVICE).t(), \
+                                      torch.cuda.HalfTensor(-np.ones((m), dtype), device=DEVICE), \
                                       torch.Size([n*n, m]))
     #Wfull  = -tf.reshape(tf.sparse_tensor_dense_matmul(Windtf,W),(n,n))
     Wfull  = -torch.reshape(torch.mm(Windtf,W),(n,n))
@@ -92,16 +98,16 @@ def tf_calc_lap(mesh,VERT):
     #actual Laplacian
     #Lx = Wfull-tf.diag(tf.reduce_sum(Wfull,axis=1))
     Lx = Wfull-torch.diag(torch.sum(Wfull,dim=1)) # (n, n)
-    S = (torch.mm(Ael,Ak)+torch.mm(Ael,Ah))/6; # (n, )
+    S = (torch.mm(Ael,Ak)+torch.mm(Ael,Ah))/6 # (n, )
 
-    return Lx,S,L,Ak;
+    return Lx,S,L,Ak
 
 
 def calc_evals(VERT,TRIV):
     mesh = prepare_mesh(VERT,TRIV)
     Lx,S,_,_ = tf_calc_lap(mesh,mesh[0])
     Si = torch.diag(torch.sqrt(1/S[:,0]))
-    Lap =  torch.mm(Si,torch.mm(Lx,Si));
+    Lap =  torch.mm(Si,torch.mm(Lx,Si))
     [evals, _] = torch.symeig( Lap )
     return evals
 
@@ -117,10 +123,14 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
     graph.dtype = dtype
 
-    graph.dXb = torch.zeros(Xori.shape, requires_grad=True, device='cuda')
-    graph.dXi = torch.zeros(Xori.shape, requires_grad=True, device='cuda')
+    graph.dXb = torch.zeros(Xori.shape, requires_grad=True, device=DEVICE)
+    graph.dXi = torch.zeros(Xori.shape, requires_grad=True, device=DEVICE)
 
     graph.global_step = torch.as_tensor(step+1.0, dtype=torch.float32)
+
+    graph.optim_dXb = optim.Adam([graph.dXb], lr=params.learning_rate)
+    graph.optim_dXi = optim.Adam([graph.dXi], lr=params.learning_rate)
+
     return graph
 
 def forward(costType, mode, graph, mesh, target_evals, nevals, step=1.0, params=OptimizationParams()):
@@ -139,22 +149,22 @@ def forward(costType, mode, graph, mesh, target_evals, nevals, step=1.0, params=
     bound_vert[ord_list] = 1
 
     def toGPUt(t):
-        return torch.as_tensor(t).cuda()
+        return torch.as_tensor(t).to(DEVICE)
     bound_vert = toGPUt(bound_vert)
-    X=(toGPUt(Xori) + graph.dXb*bound_vert + graph.dXi*(1-bound_vert))*scaleX;
+    X=(toGPUt(Xori) + graph.dXb*bound_vert + graph.dXi*(1-bound_vert))*scaleX
 
     Lx,S,L,Ak = tf_calc_lap(mesh,X)
 
     #Normalized Laplacian
     Si = torch.diag(torch.sqrt(1/S[:,0]))
-    Lap =  torch.mm(Si,torch.mm(Lx,Si));
+    Lap =  torch.mm(Si,torch.mm(Lx,Si))
 
     def l2_loss(t):
         return 0.5*torch.sum(t**2)
 
     #Spectral decomposition
     [evals,v]  = torch.symeig( Lap, eigenvectors=True )
-    cost_evals = 1e1*l2_loss( (evals[0:nevals]-target_evals[0:nevals]) * (1/torch.as_tensor(np.asarray(range(1,nevals+1),graph.dtype) ).cuda()) ) # \
+    cost_evals = 1e1*l2_loss( (evals[0:nevals]-target_evals[0:nevals]) * (1/torch.as_tensor(np.asarray(range(1,nevals+1),graph.dtype) ).to(DEVICE)) ) # \
 
     # triangle flip penalty
     Tpi = toGPUt(Tpi)
@@ -170,7 +180,7 @@ def forward(costType, mode, graph, mesh, target_evals, nevals, step=1.0, params=
 
     #inner points regularizer
     varA = torch.std(Ak, dim=[0])
-    inner_reg_cost = params.inner_reg*(l2_loss(L) + l2_loss(varA));
+    inner_reg_cost = params.inner_reg*(l2_loss(L) + l2_loss(varA))
     #boundary points regularizer
     bound_reg_cost = params.bound_reg*decay* torch.sum(L[bound_edges[:,0],:])
 
@@ -194,11 +204,19 @@ def forward(costType, mode, graph, mesh, target_evals, nevals, step=1.0, params=
 
     if mode == 'train':
         if costType == 'bound':
-            train_op_bound = clipped_grad_minimize(cost_bound, [graph.dXb])
+            # train_op_bound = clipped_grad_minimize(cost_bound, [graph.dXb])
+            graph.optim_dXb.zero_grad()
+            cost_bound.backward()
+            graph.dXb.grad.data.clamp_(-0.0001, 0.0001)
+            graph.optim_dXb.step()
             outList = [cost_bound, cost_evals, X]
             return toNumpy(outList)
         if costType == 'inner':
-            train_op_inner = clipped_grad_minimize(cost_inner, [graph.dXi])
+            # train_op_inner = clipped_grad_minimize(cost_inner, [graph.dXi])
+            graph.optim_dXi.zero_grad()
+            cost_inner.backward()
+            graph.dXi.grad.data.clamp_(-0.0001, 0.0001)
+            graph.optim_dXi.step()
             outList = [cost_inner, cost_evals, X]
             return toNumpy(outList)
     elif mode == 'eval':
@@ -218,86 +236,86 @@ def run_optimization(mesh, target_evals, out_path, params = OptimizationParams()
     '''
 
     try:
-        os.makedirs('%s/' % (out_path))
+        os.makedirs(f'{out_path}/ply')
+        os.makedirs(f'{out_path}/txt')
     except OSError:
         pass
 
     [Xopt,TRIV,n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary, bound_edges, ord_list] = mesh
 
-    iterations = [];
+    iterations = []
     for nevals in params.evals:
 
         step=0
         while(step<params.numsteps-1):
-          mesh = prepare_mesh(Xopt,TRIV)
+            mesh = prepare_mesh(Xopt,TRIV)
 
-          [Xori,TRIV,n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary, bound_edges, ord_list] = mesh
+            [Xori,TRIV,n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary, bound_edges, ord_list] = mesh
 
-          #Initialize Model
-          graph = initialize(mesh, step=step)
-          tic()
-          for step in range(step+1,params.numsteps):
+            #Initialize Model
+            graph = initialize(mesh, step=step)
+            tic()
+            for step in range(step+1,params.numsteps):
 
-            if((step)%params.remesh_step==0):
-                print("RECOMPUTING TRIANGULATION at step %d" % step)
-                break;
+                if((step)%params.remesh_step==0):
+                    print("RECOMPUTING TRIANGULATION at step %d" % step)
+                    break
 
-            try:
-                feed_dict = {}
+                try:
+                    feed_dict = {}
 
-                #alternate optimization of inner and boundary vertices
-                if(int(step/10)%2==0):
-                    er, ee, Xopt_t = forward('inner', 'train', graph, mesh, target_evals, nevals, step)
+                    #alternate optimization of inner and boundary vertices
+                    if(int(step/10)%2==0):
+                        er, ee, Xopt_t = forward('inner', 'train', graph, mesh, target_evals, nevals, step, params)
+                    else:
+                        er, ee, Xopt_t = forward('bound', 'train', graph, mesh, target_evals, nevals, step, params)
+
+                    iterations.append((step, nevals, er, ee,int(step/10)%2))
+
+
+                    if ( (step) % params.checkpoint == 0 or step==(params.numsteps-1) or step==1):
+                        toc()
+                        tic()
+
+                        cost, cost_evals, cost_vcL, cost_vcW, decay, flip, evout = forward('bound', 'eval', graph, mesh, target_evals, nevals, step)
+
+                        print('Iter %f, cost: %f(evals cost: %f (%f) (%f), smoothness weight: %f). Flip: %d' %
+                            (step, cost, cost_evals, cost_vcL, cost_vcW, decay, np.sum(flip<0)))
+
+                        if params.plot:
+    #                         fig=plt.figure(figsize=(9, 4), dpi= 80, facecolor='w', edgecolor='k')
+                            plt.plot(target_evals[0:nevals],'-r')
+                            plt.plot(evout[0:nevals],'-b')
+                            plt.show()
+
+                            plt.triplot(Xopt[:,0],Xopt[:,1],TRIV)
+                            plt.axis('equal')
+                            plt.show()
+
+                        save_ply(Xopt,TRIV,'%s/ply/evals_%d_iter%d.ply' % (out_path,nevals,step))
+                        np.savetxt('%s/txt/evals_%d_iter%d.txt' % (out_path,nevals,step),evout)
+
+                        np.savetxt('%s/iterations.txt' % (out_path),iterations)
+                        #early stop
+                        if(ee<params.min_eval_loss):
+                            step=params.numsteps
+                            print('Minimum eighenvalues loss reached')
+                            break
+
+                except KeyboardInterrupt:
+                    step = params.numsteps
+                    break
+                except:
+                    print(sys.exc_info())
+                    ee=float('nan')
+
+                #If something went wrong with the spectral decomposition perturbate the last valid state and start over
+                if(ee!=ee):
+                    print('iter %d. Perturbating initial condition' % step)
+                    Xopt=Xopt+(np.random.rand(np.shape(Xopt)[0],np.shape(Xopt)[1])-0.5)*1e-3
+                    graph.global_step = step
                 else:
-                    er, ee, Xopt_t = forward('bound', 'train', graph, mesh, target_evals, nevals, step)
-
-                iterations.append((step, nevals, er, ee,int(step/10)%2))
-
-
-                if ( (step) % params.checkpoint == 0 or step==(params.numsteps-1) or step==1):
-                    toc()
-                    tic()
-
-                    cost, cost_evals, cost_vcL, cost_vcW, decay, flip, evout = forward('bound', 'eval', graph, mesh, target_evals, nevals, step)
-
-                    print('Iter %f, cost: %f(evals cost: %f (%f) (%f), smoothness weight: %f). Flip: %d' %
-                          (step, cost, cost_evals, cost_vcL, cost_vcW, decay, np.sum(flip<0)))
-
-                    if params.plot:
-#                         fig=plt.figure(figsize=(9, 4), dpi= 80, facecolor='w', edgecolor='k')
-                        plt.plot(target_evals[0:nevals],'-r')
-                        plt.plot(evout[0:nevals],'-b')
-                        plt.show()
-
-                        plt.triplot(Xopt[:,0],Xopt[:,1],TRIV)
-                        plt.axis('equal')
-                        plt.show()
-
-                    save_ply(Xopt,TRIV,'%s/evals_%d_iter%d.ply' % (out_path,nevals,step))
-                    np.savetxt('%s/evals_%d_iter%d.txt' % (out_path,nevals,step),evout)
-
-                    np.savetxt('%s/iterations.txt' % (out_path),iterations)
-                    #early stop
-                    if(ee<params.min_eval_loss):
-                        step=params.numsteps
-                        print('Minimum eighenvalues loss reached')
-                        break
-
-            except KeyboardInterrupt:
-                step = params.numsteps
-                break;
-            except:
-                print(sys.exc_info())
-                ee=float('nan')
-
-            #If something went wrong with the spectral decomposition perturbate the last valid state and start over
-            if(ee!=ee):
-              print('iter %d. Perturbating initial condition' % step)
-              Xopt=Xopt+(np.random.rand(np.shape(Xopt)[0],np.shape(Xopt)[1])-0.5)*1e-3
-              graph.global_step = step
-            else:
-                Xopt=Xopt_t
-          if(step<params.numsteps-1):
-              [Xopt,TRIV] = resample(Xopt, TRIV)
-
-
+                    Xopt=Xopt_t
+                    graph.global_step += 1
+            if(step<params.numsteps-1):
+                [Xopt,TRIV] = resample(Xopt, TRIV)
