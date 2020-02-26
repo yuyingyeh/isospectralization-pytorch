@@ -1,1 +1,1 @@
-# Isospectrolization_PyTorch
+# Isospectralization_PyTorch
