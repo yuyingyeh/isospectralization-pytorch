@@ -46,7 +46,7 @@ def main():
 
     if target is not None:
         target_v = np.loadtxt(os.path.join(target, "mesh.vert"))
-        target_t = np.loadtxt(os.path.join(target, "mesh.triv"))
+        target_t = np.loadtxt(os.path.join(target, "mesh.triv"))  - 1
 
     for filename in os.listdir(src):
         if not os.path.isfile(os.path.join(src, filename)):
@@ -55,7 +55,7 @@ def main():
         v, t = load_ply(os.path.join(src, filename))
         plt.figure(figsize=(6, 6))
         if target is not None:
-            plt.triplot(target_v[:, 0], target_v[:, 1], target_t - 1)
+            plt.triplot(target_v[:, 0], target_v[:, 1], target_t)
         plt.triplot(v[:, 0], v[:, 1], t)
         plt.xlim(0, 2)
         plt.ylim(0, 2)

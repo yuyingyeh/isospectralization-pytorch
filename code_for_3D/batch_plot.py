@@ -47,7 +47,7 @@ def main():
 
     if target is not None:
         target_v = np.loadtxt(os.path.join(target, "mesh.vert"))
-        target_t = np.loadtxt(os.path.join(target, "mesh.triv"))
+        target_t = np.loadtxt(os.path.join(target, "mesh.triv")) - 1
 
     for filename in os.listdir(src):
         if not os.path.isfile(os.path.join(src, filename)):
@@ -58,7 +58,7 @@ def main():
         ax = fig.add_subplot(111, projection="3d")
         ax.view_init(30, 30)
         if target is not None:
-            ax.plot_trisurf(target_v[:, 0], target_v[:, 1], target_t - 1)
+            ax.plot_trisurf(target_v[:, 0], target_v[:, 1], target_t)
         ax.plot_trisurf(
             v[:, 0], v[:, 1], t, v[:, 2], linewidth=0.2, edgecolor="0.8", alpha=0.5
         )
