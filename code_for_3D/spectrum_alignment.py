@@ -17,7 +17,7 @@ import scipy
 
 from shape_library import *
 
-DEVICE = torch.device('cuda:3')
+DEVICE = torch.device('cuda:0')
 
 class OptimizationParams:
     def __init__(self, smoothing='displacement'):
@@ -289,7 +289,9 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
     [VERT, TRIV, n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary] = mesh
     pstart = 0
-    # Xori = VERT[:, 0:3]
+    Xori = VERT[:, 0:3]
+    save_ply(Xori,TRIV,'%s/ply/initial.ply' % out_path)
+    np.savetxt('%s/txt/target.txt' % out_path, target_evals.cpu().detach().numpy())
     Xopt = VERT[:, 0:3]
 
     #Optimize the shape increasing the number of eigenvalue to be taken into account

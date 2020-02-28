@@ -18,7 +18,7 @@ from shape_library import *
 
 import matplotlib.pyplot as plt
 
-DEVICE = torch.device('cuda:3')
+DEVICE = torch.device('cuda')
 
 class OptimizationParams:
     def __init__(self, smoothing='displacement'):
@@ -242,6 +242,8 @@ def run_optimization(mesh, target_evals, out_path, params = OptimizationParams()
         pass
 
     [Xopt,TRIV,n, m, Ik, Ih, Ik_k, Ih_k, Tpi, Txi, Tni, iM, Windices, Ael, Bary, bound_edges, ord_list] = mesh
+    save_ply(Xopt,TRIV,'%s/ply/initial.ply' % out_path)
+    np.savetxt('%s/txt/target.txt' % out_path, target_evals.cpu().detach().numpy())
 
     iterations = []
     for nevals in params.evals:
