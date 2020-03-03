@@ -8,10 +8,15 @@ params.min_eval_loss = 0.0001
 params.evals = [20]
 params.numsteps = 3000
 
-VERT, TRIV = load_mesh('data/round_cuber_1000/')
-mesh = prepare_mesh(VERT, TRIV, 'float32')
+VERT, TRIV = load_mesh("data/round_cuber_1000/")
+mesh = prepare_mesh(VERT, TRIV, "float32")
 
-VERT_t, TRIV_t = load_mesh('data/round_cuber_out_1000/')
+VERT_t, TRIV_t = load_mesh("data/round_cuber_out_1000/")
 evals_t = calc_evals(VERT_t, TRIV_t)
 
-run_optimization(mesh=mesh, target_evals=evals_t, out_path='results/round_cuber_out_large_vol_coef', params=params)
+run_optimization(
+    mesh=mesh,
+    target_evals=evals_t,
+    out_path="results/round_cuber_out_large_vol_coef",
+    params=params,
+)
