@@ -1,7 +1,5 @@
 from shape_library import *
 from spectrum_alignment import *
-#import os
-#os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 params = OptimizationParams()
 params.checkpoint_steps = 100
@@ -9,7 +7,6 @@ params.eval_steps = 100
 params.min_eval_loss = 0.0001
 params.evals = [20]
 params.numsteps = 3000
-
 
 VERT, TRIV = load_mesh('data/round_cuber_1000/')
 mesh = prepare_mesh(VERT, TRIV, 'float32')
