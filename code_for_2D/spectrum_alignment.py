@@ -1,20 +1,13 @@
-"""Align spectrum of a shape to another."""
-
+"""Functions for spectrum alignment."""
 import os
 import sys
 
 import numpy as np
 import scipy
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import torchvision.utils as vutils
 from scipy import sparse
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
 
-from shape_library import *
+from shape_library import load_mesh, prepare_mesh, resample
 
 DEVICE = torch.device("cuda")
 
@@ -26,7 +19,7 @@ class OptimizationParams:
         self.plot = False
 
         self.evals = [20]
-        self.numsteps = 5000
+        self.steps = 5000
         self.remesh_step = 500
 
         self.decay_target = 0.05
@@ -164,8 +157,8 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
     graph.global_step = torch.as_tensor(step + 1.0, dtype=torch.float32)
 
-    graph.optim_dXb = optim.Adam([graph.dXb], lr=params.learning_rate)
-    graph.optim_dXi = optim.Adam([graph.dXi], lr=params.learning_rate)
+    graph.optim_dXb = torch.optim.Adam([graph.dXb], lr=params.learning_rate)
+    graph.optim_dXi = torch.optim.Adam([graph.dXi], lr=params.learning_rate)
 
     return graph
 
@@ -206,8 +199,8 @@ def forward(
         1
         + np.cos(
             3.14
-            * np.minimum(params.numsteps / 2.0, graph.global_step)
-            / (params.numsteps / 2.0)
+            * np.minimum(params.steps / 2.0, graph.global_step)
+            / (params.steps / 2.0)
         )
     )
     decay = (1 - params.decay_target) * cosine_decay + params.decay_target
@@ -242,7 +235,7 @@ def forward(
             1
             / torch.as_tensor(np.asarray(range(1, nevals + 1), graph.dtype)).to(DEVICE)
         )
-    )  # \
+    )
 
     # Triangle flip penalty
     Tpi = toGPUt(Tpi)
@@ -265,13 +258,6 @@ def forward(
     # Inner and outer points cost functions
     cost_bound = cost_evals + flip_cost + bound_reg_cost
     cost_inner = inner_reg_cost + flip_cost
-
-    def clipped_grad_minimize(cost, variables):
-        op = optim.Adam(variables, lr=params.learning_rate)
-        op.zero_grad()
-        cost.backward()
-        variables[0].grad.data.clamp_(-0.0001, 0.0001)
-        op.step()
 
     def toNumpy(a):
         o = []
@@ -344,7 +330,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
     for nevals in params.evals:
 
         step = 0
-        while step < params.numsteps - 1:
+        while step < params.steps - 1:
             mesh = prepare_mesh(Xopt, TRIV)
 
             [
@@ -370,7 +356,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
             # Initialize the model
             graph = initialize(mesh, step=step)
             tic()
-            for step in range(step + 1, params.numsteps):
+            for step in range(step + 1, params.steps):
 
                 if (step) % params.remesh_step == 0:
                     print("RECOMPUTING TRIANGULATION at step %d" % step)
@@ -407,7 +393,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
                     if (
                         (step) % params.checkpoint == 0
-                        or step == (params.numsteps - 1)
+                        or step == (params.steps - 1)
                         or step == 1
                     ):
                         toc()
@@ -451,12 +437,12 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                         np.savetxt("%s/iterations.txt" % (out_path), iterations)
                         # early stop
                         if ee < params.min_eval_loss:
-                            step = params.numsteps
+                            step = params.steps
                             print("Minimum eigenvalues loss reached")
                             break
 
                 except KeyboardInterrupt:
-                    step = params.numsteps
+                    step = params.steps
                     break
                 except:
                     print(sys.exc_info())
@@ -474,5 +460,5 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                 else:
                     Xopt = Xopt_t
                     graph.global_step += 1
-            if step < params.numsteps - 1:
+            if step < params.steps - 1:
                 [Xopt, TRIV] = resample(Xopt, TRIV)

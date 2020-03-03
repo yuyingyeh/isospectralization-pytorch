@@ -1,21 +1,15 @@
-"""Align spectrum of a shape to another."""
+"""Functions for spectrum alignment."""
 import os
 import sys
 
 import numpy as np
 import scipy
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-import torchvision.utils as vutils
 from scipy import sparse
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
 
-from shape_library import *
+from shape_library import load_mesh, prepare_mesh
 
-DEVICE = torch.device("cuda:0")
+DEVICE = torch.device("cuda")
 
 
 class OptimizationParams:
@@ -23,7 +17,7 @@ class OptimizationParams:
         self.checkpoint_steps = 100
         self.eval_steps = 100
 
-        self.numsteps = 2000
+        self.steps = 2000
         self.evals = [10, 20, 30]
         self.smoothing = smoothing
 
@@ -159,7 +153,7 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
     elif Xori.dtype == "float16":
         graph.dtype = torch.half
     else:
-        raise TypeError(f"Unsupported dtype (got {dtype})")
+        raise TypeError(f"Unsupported dtype (got {Xori.dtype})")
     graph.np_dtype = Xori.dtype
 
     # Model the shape deformation as a displacement vector field
@@ -177,7 +171,7 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
     graph.is_training = None
 
-    graph.optim = optim.Adam(
+    graph.optim = torch.optim.Adam(
         [graph.dX], lr=params.learning_rate, betas=(params.beta1, params.beta2)
     )
 
@@ -240,8 +234,8 @@ def forward(
         1
         + np.cos(
             3.14
-            * np.minimum(params.numsteps / 2.0, graph.global_step)
-            / (params.numsteps / 2.0)
+            * np.minimum(params.steps / 2.0, graph.global_step)
+            / (params.steps / 2.0)
         )
     )
     graph.decay = (1 - params.decay_target) * cosine_decay + params.decay_target
@@ -340,10 +334,10 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
         graph = initialize(mesh, step, params)
 
-        while step < params.numsteps - 1:
+        while step < params.steps - 1:
             tic()
 
-            for step in range(step, params.numsteps):
+            for step in range(step, params.steps):
                 try:
                     # Optimization step
                     graph.is_training = True
@@ -353,7 +347,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                     )
                     iterations.append((step, nevals, er, ee))
 
-                    if step % params.eval_steps == 0 or step == params.numsteps - 1:
+                    if step % params.eval_steps == 0 or step == params.steps - 1:
                         toc()
                         tic()
                         graph.is_training = False
@@ -376,7 +370,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
                         if (
                             step % params.checkpoint_steps == 0
-                            or step == params.numsteps - 1
+                            or step == params.steps - 1
                         ):
                             save_ply(
                                 Xopt,
@@ -393,12 +387,12 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
                         # Early stop
                         if erE < params.min_eval_loss:
-                            step = params.numsteps
+                            step = params.steps
                             print("Minimum eigenvalues loss reached")
                             break
 
                 except KeyboardInterrupt:
-                    step = params.numsteps
+                    step = params.steps
                     break
 
                 except:

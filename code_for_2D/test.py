@@ -1,10 +1,11 @@
-from shape_library import *
-from spectrum_alignment import *
+"""Reconstruct a shape from a portion of eigenvalue sequence."""
+from shape_library import load_mesh, prepare_mesh, resample
+from spectrum_alignment import OptimizationParams, calc_evals, run_optimization
 
 params = OptimizationParams()
 params.evals = [30]
 params.min_eval_loss = 0.05
-params.numsteps = 5000
+params.steps = 5000
 params.plot = False
 
 [VERT, TRIV] = load_mesh("data/oval/")

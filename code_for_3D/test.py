@@ -1,12 +1,13 @@
-from shape_library import *
-from spectrum_alignment import *
+"""Reconstruct a shape from a portion of eigenvalue sequence."""
+from shape_library import load_mesh, prepare_mesh
+from spectrum_alignment import OptimizationParams, calc_evals, run_optimization
 
 params = OptimizationParams()
 params.checkpoint_steps = 100
 params.eval_steps = 100
 params.min_eval_loss = 0.0001
 params.evals = [20]
-params.numsteps = 3000
+params.steps = 3000
 
 VERT, TRIV = load_mesh("data/round_cuber_1000/")
 mesh = prepare_mesh(VERT, TRIV, "float32")
