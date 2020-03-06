@@ -9,7 +9,7 @@ from scipy import sparse
 
 from shape_library import load_mesh, prepare_mesh
 
-DEVICE = torch.device("cuda")
+DEFAULT_DEVICE = torch.device("cuda")
 
 
 class OptimizationParams:
@@ -39,10 +39,10 @@ class OptimizationParams:
         self.beta2 = 0.999
 
 
-def tf_calc_lap(mesh, VERT):
+def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
     meshTensor = []
     for i in range(len(mesh)):
-        meshTensor.append(torch.as_tensor(mesh[i]).to(DEVICE))
+        meshTensor.append(torch.as_tensor(mesh[i]).to(device))
     [
         Xori,
         TRIV,
@@ -67,7 +67,7 @@ def tf_calc_lap(mesh, VERT):
     elif VERT.dtype == "float16":
         dtype = "float16"
 
-    VERT = torch.as_tensor(VERT).to(DEVICE)
+    VERT = torch.as_tensor(VERT).to(device)
 
     L2 = torch.sum(torch.mm(iM, VERT) ** 2, dim=1, keepdim=True)
     L = torch.sqrt(L2)
@@ -100,8 +100,8 @@ def tf_calc_lap(mesh, VERT):
     else:
         raise TypeError(f"Unrecognized dtype (got {dtype})")
     Windtf = torch.sparse.FloatTensor(
-        torch.tensor(Windices.type(torch.long), dtype=torch.long, device=DEVICE).t(),
-        torch.tensor(-np.ones((m), dtype), dtype=col_dtype, device=DEVICE),
+        torch.tensor(Windices.type(torch.long), dtype=torch.long, device=device).t(),
+        torch.tensor(-np.ones((m), dtype), dtype=col_dtype, device=device),
         torch.Size([n * n, m]),
     )
     Wfull = -torch.reshape(torch.mm(Windtf, W), (n, n))
@@ -123,7 +123,7 @@ def calc_evals(VERT, TRIV):
     return evals
 
 
-def initialize(mesh, step=1.0, params=OptimizationParams()):
+def initialize(mesh, step=1.0, params=OptimizationParams(), device=DEFAULT_DEVICE):
     """Initialize the model."""
     # Namespace
     graph = lambda: None
@@ -158,11 +158,11 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
     # Model the shape deformation as a displacement vector field
     graph.dX = torch.zeros(
-        Xori.shape, dtype=graph.dtype, requires_grad=True, device=DEVICE
+        Xori.shape, dtype=graph.dtype, requires_grad=True, device=device
     )
 
     graph.scaleX = torch.tensor(
-        1.0, dtype=graph.dtype, requires_grad=True, device=DEVICE
+        1.0, dtype=graph.dtype, requires_grad=True, device=device
     )
 
     graph.global_step = torch.tensor(
@@ -179,7 +179,14 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
 
 def forward(
-    graph, mesh, target_evals, nevals, nfix, step=1.0, params=OptimizationParams()
+    graph,
+    mesh,
+    target_evals,
+    nevals,
+    nfix,
+    step=1.0,
+    params=OptimizationParams(),
+    device=DEFAULT_DEVICE,
 ):
 
     [
@@ -199,10 +206,10 @@ def forward(
         Ael,
         Bary,
     ] = mesh
-    Bary = torch.as_tensor(Bary).to(DEVICE)
-    TRIV = torch.as_tensor(TRIV, dtype=torch.long).to(DEVICE)
+    Bary = torch.as_tensor(Bary).to(device)
+    TRIV = torch.as_tensor(TRIV, dtype=torch.long).to(device)
 
-    graph.X = torch.as_tensor(Xori).to(DEVICE) * graph.scaleX + graph.dX
+    graph.X = torch.as_tensor(Xori).to(device) * graph.scaleX + graph.dX
 
     Lx, S, L, Ak = tf_calc_lap(mesh, graph.X)
 
@@ -222,7 +229,7 @@ def forward(
             * (
                 1
                 / torch.as_tensor(np.asarray(range(1, nevals + 1), graph.np_dtype)).to(
-                    DEVICE
+                    device
                 )
             )
         )

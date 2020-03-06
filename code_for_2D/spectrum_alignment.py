@@ -9,7 +9,7 @@ from scipy import sparse
 
 from shape_library import load_mesh, prepare_mesh, resample
 
-DEVICE = torch.device("cuda")
+DEFAULT_DEVICE = torch.device("cuda")
 
 
 class OptimizationParams:
@@ -31,10 +31,10 @@ class OptimizationParams:
         self.bound_reg = 2e1
 
 
-def tf_calc_lap(mesh, VERT):
+def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
     meshTensor = []
     for i in range(len(mesh)):
-        meshTensor.append(torch.as_tensor(mesh[i]).to(DEVICE))
+        meshTensor.append(torch.as_tensor(mesh[i]).to(device))
     [
         _,
         TRIV,
@@ -60,7 +60,7 @@ def tf_calc_lap(mesh, VERT):
     if VERT.dtype == "float16":
         dtype = "float16"
 
-    VERT = torch.as_tensor(VERT).to(DEVICE)
+    VERT = torch.as_tensor(VERT).to(device)
     L2 = torch.unsqueeze(torch.sum(torch.mm(iM, VERT) ** 2, dim=1), dim=1)
     L = torch.sqrt(L2)  # Dist of edges (m, 1)
 
@@ -86,21 +86,21 @@ def tf_calc_lap(mesh, VERT):
     if dtype == "float32":
         Windtf = torch.sparse.FloatTensor(
             torch.tensor(
-                Windices.type(torch.long), dtype=torch.long, device=DEVICE
+                Windices.type(torch.long), dtype=torch.long, device=device
             ).t(),  #
-            torch.tensor(-np.ones((m), dtype), dtype=torch.float, device=DEVICE),
+            torch.tensor(-np.ones((m), dtype), dtype=torch.float, device=device),
             torch.Size([n * n, m]),
         )
     if dtype == "float64":
         Windtf = torch.sparse.DoubleTensor(
-            torch.cuda.LongTensor(Windices.type(torch.long), device=DEVICE).t(),
-            torch.cuda.DoubleTensor(-np.ones((m), dtype), device=DEVICE),
+            torch.cuda.LongTensor(Windices.type(torch.long), device=device).t(),
+            torch.cuda.DoubleTensor(-np.ones((m), dtype), device=device),
             torch.Size([n * n, m]),
         )
     if dtype == "float16":
         Windtf = torch.sparse.HalfTensor(
-            torch.cuda.LongTensor(Windices.type(torch.long), device=DEVICE).t(),
-            torch.cuda.HalfTensor(-np.ones((m), dtype), device=DEVICE),
+            torch.cuda.LongTensor(Windices.type(torch.long), device=device).t(),
+            torch.cuda.HalfTensor(-np.ones((m), dtype), device=device),
             torch.Size([n * n, m]),
         )
     Wfull = -torch.reshape(torch.mm(Windtf, W), (n, n))
@@ -122,7 +122,7 @@ def calc_evals(VERT, TRIV):
     return evals
 
 
-def initialize(mesh, step=1.0, params=OptimizationParams()):
+def initialize(mesh, step=1.0, params=OptimizationParams(), device=DEFAULT_DEVICE):
     graph = lambda: None
 
     [
@@ -152,8 +152,8 @@ def initialize(mesh, step=1.0, params=OptimizationParams()):
 
     graph.dtype = dtype
 
-    graph.dXb = torch.zeros(Xori.shape, requires_grad=True, device=DEVICE)
-    graph.dXi = torch.zeros(Xori.shape, requires_grad=True, device=DEVICE)
+    graph.dXb = torch.zeros(Xori.shape, requires_grad=True, device=device)
+    graph.dXi = torch.zeros(Xori.shape, requires_grad=True, device=device)
 
     graph.global_step = torch.as_tensor(step + 1.0, dtype=torch.float32)
 
@@ -172,6 +172,7 @@ def forward(
     nevals,
     step=1.0,
     params=OptimizationParams(),
+    device=DEFAULT_DEVICE
 ):
 
     [
@@ -213,7 +214,7 @@ def forward(
     bound_vert[ord_list] = 1
 
     def toGPUt(t):
-        return torch.as_tensor(t).to(DEVICE)
+        return torch.as_tensor(t).to(device)
 
     bound_vert = toGPUt(bound_vert)
     X = (toGPUt(Xori) + graph.dXb * bound_vert + graph.dXi * (1 - bound_vert)) * scaleX
@@ -233,7 +234,7 @@ def forward(
         (evals[0:nevals] - target_evals[0:nevals])
         * (
             1
-            / torch.as_tensor(np.asarray(range(1, nevals + 1), graph.dtype)).to(DEVICE)
+            / torch.as_tensor(np.asarray(range(1, nevals + 1), graph.dtype)).to(device)
         )
     )
 
@@ -291,14 +292,7 @@ def forward(
 
 def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
-    # GPU options
-    """
-    gpu_options = tf.GPUOptions(allow_growth = True)
-    config = tf.ConfigProto(device_count={'CPU': 1, 'GPU': 1}, allow_soft_placement = False, gpu_options=gpu_options)
-    config.gpu_options.allow_growth=True
-    """
-
-    try:
+   try:
         os.makedirs(f"{out_path}/ply")
         os.makedirs(f"{out_path}/txt")
     except OSError:
