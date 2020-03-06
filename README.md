@@ -8,6 +8,10 @@ This is an implementation for the paper "Isospectralization, or how to hear shap
 
 We recommend to use `pipenv` for environment setup. Please make sure that `pipenv` is properly installed (if not, try `pip install pipenv`), then run `pipenv install` to install the dependencies.
 
+## Run
+
+To run your code: python test.py 
+
 ## TODO
 
 - [ ] Experiment complex shapes in ShapeNet

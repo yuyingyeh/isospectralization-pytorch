@@ -7,7 +7,7 @@ import scipy
 import torch
 from scipy import sparse
 
-from shape_library import load_mesh, prepare_mesh, resample
+from shape_library import load_mesh, prepare_mesh, resample, save_ply, tic, toc
 
 DEVICE = torch.device("cuda")
 
