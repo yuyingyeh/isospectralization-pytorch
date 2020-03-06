@@ -10,7 +10,11 @@ We recommend to use `pipenv` for environment setup. Please make sure that `pipen
 
 ## Run
 
-To run your code: python test.py 
+To run your code: python test.py
+To plot your generate graphs: python batch_plot.py results/bell/ply
+```
+This will generate several plots in a png and pdf 
+``` 
 
 ## TODO
 
