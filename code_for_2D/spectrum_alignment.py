@@ -13,28 +13,37 @@ DEFAULT_DEVICE = torch.device("cuda")
 
 
 class OptimizationParams:
-    def __init__(self, smoothing="displacement"):
-
-        self.checkpoint = 100
-        self.plot = False
-
-        self.evals = [20]
+    def __init__(self):
+        """Class that holds the hyperparamters."""
+        # Training
         self.steps = 5000
+        self.checkpoint = 100
         self.remesh_step = 500
 
-        self.decay_target = 0.05
-        self.learning_rate = 0.005
+        # Number of eigenvalues to align
+        self.evals = [20]
+
+        # Early stopping
         self.min_eval_loss = 0.05
 
-        self.flip_penalty_reg = 1e10
-        self.inner_reg = 1e0
+        # Adam optimizer
+        self.learning_rate = 0.005
+
+        # Regularizer coefficients
+        self.decay_target = 0.05
         self.bound_reg = 2e1
+        self.inner_reg = 1e0
+        self.flip_penalty_reg = 1e10
 
 
 def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
-    meshTensor = []
+    """Compute the Laplacian."""
+    # Move the mesh to the target device
+    mesh_tensor = []
     for i in range(len(mesh)):
-        meshTensor.append(torch.as_tensor(mesh[i]).to(device))
+        mesh_tensor.append(torch.as_tensor(mesh[i]).to(device))
+
+    # Unpack the mesh
     [
         _,
         TRIV,
@@ -53,16 +62,21 @@ def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
         Bary,
         bound_edges,
         ord_list,
-    ] = meshTensor
+    ] = mesh_tensor
+
+    # Set the data type
     dtype = "float32"
     if VERT.dtype == "float64":
         dtype = "float64"
     if VERT.dtype == "float16":
         dtype = "float16"
 
+    # Move the embedding to the target device
     VERT = torch.as_tensor(VERT).to(device)
+
+    # Compute the edge lengths
     L2 = torch.unsqueeze(torch.sum(torch.mm(iM, VERT) ** 2, dim=1), dim=1)
-    L = torch.sqrt(L2)  # Dist of edges (m, 1)
+    L = torch.sqrt(L2)
 
     def fAk(Ik, Ik_k):  # Ik: 1 if (edg1, edg2) in same tri, -1 if same edge
         Ikp = torch.abs(Ik)
@@ -91,13 +105,13 @@ def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
             torch.tensor(-np.ones((m), dtype), dtype=torch.float, device=device),
             torch.Size([n * n, m]),
         )
-    if dtype == "float64":
+    elif dtype == "float64":
         Windtf = torch.sparse.DoubleTensor(
             torch.cuda.LongTensor(Windices.type(torch.long), device=device).t(),
             torch.cuda.DoubleTensor(-np.ones((m), dtype), device=device),
             torch.Size([n * n, m]),
         )
-    if dtype == "float16":
+    elif dtype == "float16":
         Windtf = torch.sparse.HalfTensor(
             torch.cuda.LongTensor(Windices.type(torch.long), device=device).t(),
             torch.cuda.HalfTensor(-np.ones((m), dtype), device=device),
@@ -114,17 +128,22 @@ def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
 
 
 def calc_evals(VERT, TRIV):
+    """Compute the eigenvalue sequence."""
     mesh = prepare_mesh(VERT, TRIV)
     Lx, S, _, _ = tf_calc_lap(mesh, mesh[0])
     Si = torch.diag(torch.sqrt(1 / S[:, 0]))
     Lap = torch.mm(Si, torch.mm(Lx, Si))
-    [evals, _] = torch.symeig(Lap)
+    evals, _ = torch.symeig(Lap)
     return evals
 
 
 def initialize(mesh, step=1.0, params=OptimizationParams(), device=DEFAULT_DEVICE):
+    """Initialize the model."""
+    # Namespace
     graph = lambda: None
+    graph.global_step = torch.as_tensor(step + 1.0, dtype=torch.float32)
 
+    # Unpack the mesh
     [
         Xori,
         TRIV,
@@ -144,24 +163,27 @@ def initialize(mesh, step=1.0, params=OptimizationParams(), device=DEFAULT_DEVIC
         bound_edges,
         ord_list,
     ] = mesh
-    dtype = "float32"
+
+    # Set datatype
+    graph.dtype = "float32"
     if Xori.dtype == "float64":
-        dtype = "float64"
-    if Xori.dtype == "float16":
-        dtype = "float16"
+        graph.dtype = "float64"
+    elif Xori.dtype == "float16":
+        graph.dtype = "float16"
 
-    graph.dtype = dtype
-
+    # Model the shape deformation as a displacement vector field
     graph.dXb = torch.zeros(Xori.shape, requires_grad=True, device=device)
     graph.dXi = torch.zeros(Xori.shape, requires_grad=True, device=device)
 
-    graph.global_step = torch.as_tensor(step + 1.0, dtype=torch.float32)
-
+    # The optimizers
     graph.optim_dXb = torch.optim.Adam([graph.dXb], lr=params.learning_rate)
     graph.optim_dXi = torch.optim.Adam([graph.dXi], lr=params.learning_rate)
 
     return graph
 
+def l2_loss(t):
+    """Return the l2 loss."""
+    return 0.5 * torch.sum(t ** 2)
 
 def forward(
     costType,
@@ -174,7 +196,8 @@ def forward(
     params=OptimizationParams(),
     device=DEFAULT_DEVICE
 ):
-
+    """Perform a forward pass."""
+    # Unpack the mesh
     [
         Xori,
         TRIV,
@@ -195,7 +218,7 @@ def forward(
         ord_list,
     ] = mesh
 
-    # Setup cosine decay
+    # Cosine decay for the regularizers
     cosine_decay = 0.5 * (
         1
         + np.cos(
@@ -213,20 +236,17 @@ def forward(
     bound_vert = np.zeros((n, 1), graph.dtype)
     bound_vert[ord_list] = 1
 
-    def toGPUt(t):
+    def to_device(t):
         return torch.as_tensor(t).to(device)
 
-    bound_vert = toGPUt(bound_vert)
-    X = (toGPUt(Xori) + graph.dXb * bound_vert + graph.dXi * (1 - bound_vert)) * scaleX
+    bound_vert = to_device(bound_vert)
+    X = (to_device(Xori) + graph.dXb * bound_vert + graph.dXi * (1 - bound_vert)) * scaleX
 
     Lx, S, L, Ak = tf_calc_lap(mesh, X)
 
     # Normalized Laplacian
     Si = torch.diag(torch.sqrt(1 / S[:, 0]))
     Lap = torch.mm(Si, torch.mm(Lx, Si))
-
-    def l2_loss(t):
-        return 0.5 * torch.sum(t ** 2)
 
     # Spectral decomposition
     [evals, v] = torch.symeig(Lap, eigenvectors=True)
@@ -239,13 +259,13 @@ def forward(
     )
 
     # Triangle flip penalty
-    Tpi = toGPUt(Tpi)
-    Txi = toGPUt(Txi)
-    Tni = toGPUt(Tni)
+    Tpi = to_device(Tpi)
+    Txi = to_device(Txi)
+    Tni = to_device(Tni)
     tp = torch.mm(Tpi[:, :], X)
     tx = torch.mm(Txi[:, :], X)
     tn = torch.mm(Tni[:, :], X)
-    Rot = toGPUt(np.asarray([[0, 1], [-1, 0]], graph.dtype))
+    Rot = to_device(np.asarray([[0, 1], [-1, 0]], graph.dtype))
     cp = torch.sum(torch.mm(tn, Rot) * (tx - tp), dim=1)
     cp = cp - 1e-4
     flip_cost = params.flip_penalty_reg * l2_loss(cp - torch.abs(cp))
@@ -253,6 +273,7 @@ def forward(
     # Inner points regularizer
     varA = torch.std(Ak, dim=[0])
     inner_reg_cost = params.inner_reg * (l2_loss(L) + l2_loss(varA))
+
     # Boundary points regularizer
     bound_reg_cost = params.bound_reg * decay * torch.sum(L[bound_edges[:, 0], :])
 
@@ -260,7 +281,7 @@ def forward(
     cost_bound = cost_evals + flip_cost + bound_reg_cost
     cost_inner = inner_reg_cost + flip_cost
 
-    def toNumpy(a):
+    def to_numpy(a):
         o = []
         for ai in a:
             oi = ai.cpu().detach().numpy()
@@ -274,30 +295,29 @@ def forward(
             graph.dXb.grad.data.clamp_(-0.0001, 0.0001)
             graph.optim_dXb.step()
             outList = [cost_bound, cost_evals, X]
-            return toNumpy(outList)
+            return to_numpy(outList)
         if costType == "inner":
             graph.optim_dXi.zero_grad()
             cost_inner.backward()
             graph.dXi.grad.data.clamp_(-0.0001, 0.0001)
             graph.optim_dXi.step()
             outList = [cost_inner, cost_evals, X]
-            return toNumpy(outList)
+            return to_numpy(outList)
     elif mode == "eval":
         outList1 = [cost_bound, cost_evals, inner_reg_cost, bound_reg_cost]
-        outList1 = toNumpy(outList1)
+        outList1 = to_numpy(outList1)
         outList2 = [cp, evals]
-        outList2 = toNumpy(outList2)
+        outList2 = to_numpy(outList2)
         return outList1 + [decay] + outList2
 
 
 def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
+    """Run the optimization."""
+    # Create the output directories
+    os.makedirs(f"{out_path}/ply", exist_ok=True)
+    os.makedirs(f"{out_path}/txt", exist_ok=True)
 
-   try:
-        os.makedirs(f"{out_path}/ply")
-        os.makedirs(f"{out_path}/txt")
-    except OSError:
-        pass
-
+    # Unpack the mesh
     [
         Xopt,
         TRIV,
@@ -317,16 +337,23 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
         bound_edges,
         ord_list,
     ] = mesh
+
+    # Save the initial embedding
     save_ply(Xopt, TRIV, "%s/ply/initial.ply" % out_path)
+
+    # Save the target eigenvalue sequence
     np.savetxt("%s/txt/target.txt" % out_path, target_evals.cpu().detach().numpy())
 
     iterations = []
     for nevals in params.evals:
 
         step = 0
+
         while step < params.steps - 1:
+            # Prepare the mesh
             mesh = prepare_mesh(Xopt, TRIV)
 
+            # Unpack the mesh
             [
                 Xori,
                 TRIV,
@@ -349,18 +376,21 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
 
             # Initialize the model
             graph = initialize(mesh, step=step)
+
             tic()
+
+            # Start iteration
             for step in range(step + 1, params.steps):
 
-                if (step) % params.remesh_step == 0:
+                # Recompute triangulation
+                if step % params.remesh_step == 0:
                     print("RECOMPUTING TRIANGULATION at step %d" % step)
                     break
 
                 try:
-                    feed_dict = {}
-
                     # Alternate optimization of inner and boundary vertices
                     if int(step / 10) % 2 == 0:
+                        # Optimize over inner points
                         er, ee, Xopt_t = forward(
                             "inner",
                             "train",
@@ -372,6 +402,7 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                             params,
                         )
                     else:
+                        # Optimize over boundary points
                         er, ee, Xopt_t = forward(
                             "bound",
                             "train",
@@ -386,13 +417,14 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                     iterations.append((step, nevals, er, ee, int(step / 10) % 2))
 
                     if (
-                        (step) % params.checkpoint == 0
-                        or step == (params.steps - 1)
+                        step % params.checkpoint == 0
+                        or step == params.steps - 1
                         or step == 1
                     ):
                         toc()
                         tic()
 
+                        # Perform a forward pass in eval mode
                         (
                             cost,
                             cost_evals,
@@ -418,18 +450,23 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                             )
                         )
 
+                        # Save the current embedding
                         save_ply(
                             Xopt,
                             TRIV,
                             "%s/ply/evals_%d_iter_%06d.ply" % (out_path, nevals, step),
                         )
+
+                        # Save the current eigenvalue sequence
                         np.savetxt(
                             "%s/txt/evals_%d_iter_%06d.txt" % (out_path, nevals, step),
                             evout,
                         )
 
+                        # Save the training progress statistics
                         np.savetxt("%s/iterations.txt" % (out_path), iterations)
-                        # early stop
+
+                        # Early stopping
                         if ee < params.min_eval_loss:
                             step = params.steps
                             print("Minimum eigenvalues loss reached")
@@ -438,12 +475,14 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                 except KeyboardInterrupt:
                     step = params.steps
                     break
+
                 except:
                     print(sys.exc_info())
                     ee = float("nan")
 
-                # If something went wrong with the spectral decomposition perturbate the last valid state and start over
                 if ee != ee:
+                    # If nan (something went wrong) with the spectral decomposition,
+                    # perturbate the last valid state and start over
                     print("iter %d. Perturbating initial condition" % step)
                     Xopt = (
                         Xopt
@@ -451,8 +490,10 @@ def run_optimization(mesh, target_evals, out_path, params=OptimizationParams()):
                         * 1e-3
                     )
                     graph.global_step = step
+
                 else:
                     Xopt = Xopt_t
                     graph.global_step += 1
+
             if step < params.steps - 1:
                 [Xopt, TRIV] = resample(Xopt, TRIV)
