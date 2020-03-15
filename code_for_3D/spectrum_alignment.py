@@ -134,7 +134,7 @@ def tf_calc_lap(mesh, VERT, device=DEFAULT_DEVICE):
 
 def calc_evals(VERT, TRIV):
     """Compute the eigenvalue sequence."""
-    mesh = prepare_mesh(VERT, TRIV, "float64")
+    mesh = prepare_mesh(VERT, TRIV, "float32")
     Lx, S, _, _ = tf_calc_lap(mesh, mesh[0])
     Si = torch.diag(torch.sqrt(1 / S[:, 0]))
     Lap = torch.mm(Si, torch.mm(Lx, Si))

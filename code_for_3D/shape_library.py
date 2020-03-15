@@ -83,16 +83,11 @@ def save_ply(V,T,filename):
     PlyData([el1,el2]).write(filename)
 
 def load_ply(filename):
+    """Load ply data."""
     plydata = PlyData.read(filename)
-    # Generate triangle faces from ply file
-    tri_data = plydata['face'].data['vertex_indices']
-    T = np.vstack(tri_data)
-    # Generate vertices from ply file
-    x_data = plydata['vertex'].data['x']
-    y_data = plydata['vertex'].data['y']
-    z_data = plydata['vertex'].data['z']
-    V = np.vstack((x_data,y_data,z_data)).T
-    return V,T
+    v = np.array([(v[0], v[1], v[2]) for v in plydata.elements[0].data])
+    t = np.array([t[0] for t in plydata.elements[1].data])
+    return v, t
     
 def ismember(T, pts):
     out = np.zeros(np.shape(T)[0])
