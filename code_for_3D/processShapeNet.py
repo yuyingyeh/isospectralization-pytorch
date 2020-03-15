@@ -3,7 +3,7 @@ import re
 import numpy as np
 import glob
 
-numShape = 10
+numShape = 11
 
 def processMesh(mesh):
     reComp = re.compile("(?<=^)(v |vn |vt |f )(.*)(?=$)", re.MULTILINE)

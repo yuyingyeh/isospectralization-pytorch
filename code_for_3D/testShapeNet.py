@@ -18,7 +18,8 @@ params.steps = 3000
 #shapeName = 'ShapeNet7_sp_can'
 #shapeName = 'ShapeNet8_bowl_bowl'
 #shapeName = 'ShapeNet9_jar_jar'
-shapeName = 'ShapeNet10_tub_tub'
+#shapeName = 'ShapeNet10_tub_tub'
+shapeName = 'ShapeNet11_bottle_bottle'
 
 VERT, TRIV = load_mesh("data/%s/modelS/" % shapeName)
 mesh = prepare_mesh(VERT, TRIV, "float32")
